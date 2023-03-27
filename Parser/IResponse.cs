@@ -1,4 +1,7 @@
 ﻿namespace BotVaria.Weather.Parser
 {
-    internal interface IResponse {}
+    internal interface IResponse 
+    {
+    
+    }
 }
