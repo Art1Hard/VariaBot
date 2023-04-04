@@ -17,7 +17,8 @@ namespace BotVaria.Bot
 
         // главная клавиатура
         private readonly ReplyKeyboardMarkup _startKeyboard = KeyboardMarkupFactory.CreateKeyboard(
-            KeyboardMarkupFactory.CreateKeyboardButtons("Погода🌦", "Валюта💰", "Подписка📅"));
+            KeyboardMarkupFactory.CreateKeyboardButtons("Погода🌦", "Валюта💰"),
+            KeyboardMarkupFactory.CreateKeyboardButtons("Подписка📅", "Аккаунт🆔"));
 
         // клавиатура городов
         private readonly ReplyKeyboardMarkup _weatherKeyboard = KeyboardMarkupFactory.CreateKeyboard(
@@ -34,6 +35,15 @@ namespace BotVaria.Bot
         // клавиатура выбора подписки
         private readonly ReplyKeyboardMarkup _subscriptionKeyboard = KeyboardMarkupFactory.CreateKeyboard(
             KeyboardMarkupFactory.CreateKeyboardButtons("◀️Назад", "Погодная🌦", "Валютная💰"));
+
+        // клавиатура аккаунта
+        private readonly ReplyKeyboardMarkup _accountKeyboard = KeyboardMarkupFactory.CreateKeyboard(
+            KeyboardMarkupFactory.CreateKeyboardButtons("Создать✅/Обновить🔄", "Просмотр👁‍🗨"),
+            KeyboardMarkupFactory.CreateKeyboardButtons("◀️Назад", "Удалить❌"));
+        
+        // клавиатура удаления аккаунта
+        private readonly ReplyKeyboardMarkup _deleteAccountKeyboard = KeyboardMarkupFactory.CreateKeyboard(
+            KeyboardMarkupFactory.CreateKeyboardButtons("Да☑️", "Нет✖️"));
 
 
         // клавиатура с ссылкой на сайт погоды
@@ -54,6 +64,9 @@ namespace BotVaria.Bot
         // вызываем когда бот запускается
         public void Start()
         {
+            // создаём базу данных
+            //await CreateDatabase();
+
             botClient.StartReceiving(Update, Error);
         }
 
@@ -89,15 +102,12 @@ namespace BotVaria.Bot
         {
             if (_userMessage.Text != null)
             {
-                // временный метод и проверка для добавления в бд
-                if (_userMessage.Text.Contains("Добавить"))
-                    await AddTelegramUser();
 
                 // метод в котором реализуется логика с командами
                 await InstrumentalInfoCommandAsync();
 
-                // временный метод в котором мы проверяем наличие данных в бд
-                await DataBaseCheckAsync();
+                // метод в котором реализуется логика с аккаунтом
+                await AccountManageAsync();
 
                 // метод в котором реализуется логика с погодой
                 await WeatherTextAsync();
@@ -105,38 +115,70 @@ namespace BotVaria.Bot
                 // метод в котором реализуется логика с валютой
                 await ValuteTextAsync();
 
+                // метод в котором мы проверяем наличие пользователей в таблице
+                await ShowAllUsers();
+
                 // печатаем в консоль сообщение - которое отправил пользователь
-                PrintMessage();
+                PrintConsoleUserMessage();
             }
         }
 
+        
+        // метод в котором находятся все инструментальные кнопки и команды
         private async Task InstrumentalInfoCommandAsync()
         {
             Dictionary<string, Func<Task>> commands = new Dictionary<string, Func<Task>>()
             {
-                { "/showkeyboard", () => AnswerUserCommand("Окей, я перезагрузил твои кнопки", "перезагрузка главной клавиатуры", _startKeyboard) },
-                { "◀️Назад", () => AnswerUserCommand("Окей, вернул тебя назад", "вернуться назад", _startKeyboard) },
-                { "Подписка📅", () => AnswerUserCommand("Выберите доступные подписки", "выбор подписки", _subscriptionKeyboard) },
-                { "Погода🌦", () => AnswerUserCommand("Выберите один из доступных городов", "выбор города", _weatherKeyboard) },
-                { "Инфомация🌦", () => AnswerUserCommand("Информация о погоде берётся с сайта OpenWeather", "информация api погоды", _linkWeatherKeyboard) },
-                { "Валюта💰", () => AnswerUserCommand("Выберите один из доступных валют", "введение валюты", _valuteKeyboard) },
-                { "Информация💰", () => AnswerUserCommand("Курсы валют берутся с Центрального банка России", "информация api валюты", _linkValuteKeyboard) }
+                { "/showkeyboard", async() => await AnswerUserAndPrintConsole("Окей, я перезагрузил твои кнопки", "перезагрузка главной клавиатуры", _startKeyboard) },
+                { "◀️Назад", async() => await AnswerUserAndPrintConsole("Окей, вернул тебя назад", "вернуться назад", _startKeyboard) },
+                { "Подписка📅", async() => await AnswerUserAndPrintConsole("Выберите доступные подписки", "выбор подписки", _subscriptionKeyboard) },
+                { "Погода🌦", async() => await AnswerUserAndPrintConsole("Выберите один из доступных городов", "выбор города", _weatherKeyboard) },
+                { "Инфомация🌦", async() => await AnswerUserAndPrintConsole("Информация о погоде берётся с сайта OpenWeather", "информация api погоды", _linkWeatherKeyboard) },
+                { "Валюта💰", async() => await AnswerUserAndPrintConsole("Выберите один из доступных валют", "введение валюты", _valuteKeyboard) },
+                { "Информация💰", async() => await AnswerUserAndPrintConsole("Курсы валют берутся с Центрального банка России", "информация api валюты", _linkValuteKeyboard) },
+                { "Аккаунт🆔", async() => await AnswerUserAndPrintConsole("Пользуясь этим разделом, вы соглашаетесь на обработку вашей личной информации " +
+                "занесённой при создания аккаунта🔄", "кнопка \"аккаунт\"", _accountKeyboard) }
             };
 
             if (_userMessage.Text != null && commands.TryGetValue(_userMessage.Text, out var action))
                 await action();
         }
 
-        private async Task AnswerUserCommand(string answer, string printLog, IReplyMarkup keyboard)
+        // метод в котором реализуется управление аккаунтом
+        private async Task AccountManageAsync()
         {
-            await SendTextMessageAsync(answer, keyboard);
-            ConsoleLogInfo(printLog);
+            Dictionary<string, Func<Task>> commands = new Dictionary<string, Func<Task>>()
+            {
+                { "Создать✅/Обновить🔄", СreateOrUpdateAccountAsync },
+                { "Просмотр👁‍🗨", ShowInfoAccountAsync },
+                { "Удалить❌", async() => await AnswerUserAndPrintConsole("Вы уверены, что хотите удалить свой аккаунт?😕", "удаление аккаунта", _deleteAccountKeyboard) },
+                { "Да☑️", DeleteAccountAsync },
+                { "Нет✖️", async() => await AnswerUserAndPrintConsole("Хорошо, что вы не собираетесь удалять аккаунт😊", "отмена удаления аккаунта", _accountKeyboard) }
+            };
+
+            if (_userMessage.Text != null && commands.TryGetValue(_userMessage.Text, out var action))
+                await action();
         }
 
-        private async Task AnswerUserCommand(string answer, string printLog)
+        // создать аккаунт или обновить информацию о нём
+        private async Task СreateOrUpdateAccountAsync()
         {
-            await SendTextMessageAsync(answer);
-            ConsoleLogInfo(printLog);
+            DBManager manager = new(_userMessage);
+            await AnswerUserAndPrintLogConsole(await manager.CreateOrUpdateAccountAsync(), "аккаунт создан или обновлён");
+        }
+
+        // просмотреть аккаунт
+        private async Task ShowInfoAccountAsync()
+        {
+            DBManager manager = new(_userMessage);
+            await AnswerUserAndPrintLogConsole(await manager.ShowInfoAccountAsync(), "показание информации об аккаунте");
+        }
+
+        // удалить аккаунт
+        private async Task DeleteAccountAsync()
+        {
+            DBManager manager = new(_userMessage);
+            await AnswerUserAndPrintConsole(await manager.RemoveAccountAsync(), "аккаунт удалён", _startKeyboard);
         }
 
         private async Task WeatherTextAsync()
@@ -165,108 +207,68 @@ namespace BotVaria.Bot
                     "ru",
                     "de362d5cd398a08ed08785357a45fefa");
 
-            await SendTextMessageAsync(await weather.GetWeatherAsync());
-            ConsoleLogInfo("погода");
+            await AnswerUserAndPrintLogConsole(await weather.GetWeatherAsync(), "погода");
         }
 
         private async Task ValuteTextAsync()
         {
             Dictionary<string, Func<Task>> valutes = new Dictionary<string, Func<Task>>()
             {
-                { "USD", async() => await ShowValuteAsync("USD") },
-                { "KGS", async() => await ShowValuteAsync("KGS") },
-                { "EUR", async() => await ShowValuteAsync("EUR") },
-                { "UAH", async() => await ShowValuteAsync("UAH") },
-                { "KZT", async() => await ShowValuteAsync("KZT") },
-                { "CNY", async() => await ShowValuteAsync("CNY") }
+                { "USD", async() => await ShowCountryValuteAsync("USD") },
+                { "KGS", async() => await ShowCountryValuteAsync("KGS") },
+                { "EUR", async() => await ShowCountryValuteAsync("EUR") },
+                { "UAH", async() => await ShowCountryValuteAsync("UAH") },
+                { "KZT", async() => await ShowCountryValuteAsync("KZT") },
+                { "CNY", async() => await ShowCountryValuteAsync("CNY") }
             };
             if (_userMessage.Text != null && valutes.TryGetValue(_userMessage.Text, out var action))
                 await action();
         }
 
-        private async Task ShowValuteAsync(string valute)
+        private async Task ShowCountryValuteAsync(string valute)
         {
             ValuteApiCurrentData valuta = new("https://www.cbr-xml-daily.ru/daily_json.js", valute);
-            await SendTextMessageAsync(await valuta.GetValutaAsync());
-            ConsoleLogInfo("валюта");
+            await AnswerUserAndPrintLogConsole(await valuta.GetValutaAsync(), "валюта");
         }
 
-        private async Task DataBaseCheckAsync()
+        // метод в котором реализуется показ всей таблицы пользователей
+        private async Task ShowAllUsers()
         {
-            if(_userMessage.Text == "/database")
+            if (_userMessage.Text == "/showusers")
             {
+                DBManager dBManager = new(_userMessage);
                 if (_userMessage.Chat.Username == "art1hard")
-                    await ShowDataBase();
+                    await AnswerUserAndPrintLogConsole(dBManager.ShowTable(), "Показываем таблицу");
                 else
-                    await SendTextMessageAsync("Простите, вы не являетесь администратором.");
+                    await AnswerUserAndPrintLogConsole("Простите, вы не являетесь администратором.", "отказ в доступе показа всей таблице");
             }
         }
 
-        private async Task ShowDataBase()
+        private void PrintConsoleUserMessage()
         {
-            using (ApplicationContext db = new())
-            {
-                var users = db.Users.ToList();
+            if (_userMessage.From == null)
+                return;
 
-                string objects = "Список объектов:\n";
-                foreach (TelegramUser user in users)
-                {
-                    if (string.IsNullOrEmpty(objects))
-                        objects = $"{user.Id}: {user.UserName} {user.FirstName}\n";
-                    else
-                        objects += $"{user.Id}: {user.UserName} {user.FirstName}\n";
-                }
-                await SendTextMessageAsync(objects);
-            }
-        }
-
-        private async Task AddTelegramUser()
-        {
-            using (ApplicationContext db = new())
-            {
-               
-                // создаем два объекта User
-                TelegramUser art = new() { Id = 123, UserName = "art", FirstName = "artem", LastName = "hardov" };
-                TelegramUser vlad = new() { Id = 124, UserName = "vlad", FirstName = "vlad", LastName = "dark" };
-
-                // добавляем их в бд
-                db.Users.Remove(vlad);
-                db.Users.Remove(art);
-                db.SaveChanges();
-                await SendTextMessageAsync("Объекты успешно сохранены");
-
-                // получаем объекты из бд и выводим на консоль
-                var users = db.Users.ToList();
-                Console.WriteLine("Список объектов:");
-                foreach (TelegramUser user in users)
-                {
-                    Console.WriteLine($"{user.Id}.{user.UserName} - {user.FirstName}");
-                }
-            }
-        }
-
-        private void PrintMessage()
-        {
-            if(_userMessage.Chat.FirstName == null)
-                Console.WriteLine($"ID: {_userMessage.Chat.Id}\n{_userMessage.Chat.LastName}: {_userMessage.Text}");
-            else if(_userMessage.Chat.LastName == null)
-                Console.WriteLine($"ID: {_userMessage.Chat.Id}\n{_userMessage.Chat.FirstName}: {_userMessage.Text}");
-            else
-                Console.WriteLine($"ID: {_userMessage.Chat.Id}\n{_userMessage.Chat.FirstName} {_userMessage.Chat.LastName}: {_userMessage.Text}");
+            Console.WriteLine($"ID: {_userMessage.From.Id}" +
+                $"\nUsername: {_userMessage.From.Username}" +
+                $"\nName: {_userMessage.From.LastName}" +
+                $"\nMessage: {_userMessage.Text}");
             Console.WriteLine();
         }
 
-        private async Task SendTextMessageAsync(string answer)
-        {
-            await botClient.SendTextMessageAsync(_userMessage.Chat.Id, answer);
-        }
-
-        private async Task SendTextMessageAsync(string answer, IReplyMarkup keyboard)
+        private async Task AnswerUserAndPrintConsole(string answer, string printLog, IReplyMarkup keyboard)
         {
             await botClient.SendTextMessageAsync(_userMessage.Chat.Id, answer, replyMarkup: keyboard);
+            PrintLogConsole(printLog);
         }
 
-        private void ConsoleLogInfo(string info)
+        private async Task AnswerUserAndPrintLogConsole(string answer, string printLog)
+        {
+            await botClient.SendTextMessageAsync(_userMessage.Chat.Id, answer);
+            PrintLogConsole(printLog);
+        }
+
+        private void PrintLogConsole(string info)
         {
             Console.WriteLine($"Бот выслал пользователю \"{info}\"");
         }
